@@ -17,7 +17,7 @@ BOLD = "\033[1m"
 
 
 # -------------------------
-# Core Utils
+# Core
 # -------------------------
 
 def run(cmd):
@@ -33,7 +33,7 @@ def check_docker():
             check=True
         )
     except:
-        print(f"{RED}Docker is not available{RESET}")
+        print(f"{RED}Docker not available{RESET}")
         sys.exit(1)
 
 
@@ -79,7 +79,7 @@ Container  : {YELLOW}{TOR_CONTAINER}{RESET}
 
 def menu():
     print(f"""
-{CYAN}[1]{RESET} Start ProxyForge
+{CYAN}[1]{RESET} Start
 {CYAN}[2]{RESET} Stop
 {CYAN}[3]{RESET} Restart
 {CYAN}[4]{RESET} Logs
@@ -88,7 +88,7 @@ def menu():
 
 
 # -------------------------
-# Tor bootstrap monitor
+# Progress
 # -------------------------
 
 def print_progress(percent):
@@ -115,11 +115,11 @@ def wait_for_tor():
     last = -1
 
     for line in process.stdout:
-        match = re.search(r"Bootstrapped (\d+)%", line)
-        if not match:
+        m = re.search(r"Bootstrapped (\d+)%", line)
+        if not m:
             continue
 
-        percent = int(match.group(1))
+        percent = int(m.group(1))
 
         if percent <= last:
             continue
@@ -131,7 +131,7 @@ def wait_for_tor():
             process.terminate()
             break
 
-    print(f"\n{GREEN}Tor is READY{RESET}\n")
+    print(f"\n{GREEN}Tor READY{RESET}\n")
 
 
 # -------------------------
@@ -145,10 +145,10 @@ def start():
 
     check_docker()
 
-    print(f"{CYAN}Building containers...{RESET}")
+    print(f"{CYAN}Building...{RESET}")
     run(["docker", "compose", "build"])
 
-    print(f"{CYAN}Starting containers...{RESET}")
+    print(f"{CYAN}Starting...{RESET}")
     run(["docker", "compose", "up", "-d"])
 
     wait_for_tor()
@@ -158,11 +158,11 @@ def start():
     print(f"""
 {GREEN}
 ========================
-        READY
+     READY
 ========================
 {RESET}
-SOCKS5 Proxy : {ip}:1080
-HTTP Proxy   : {ip}:8080
+SOCKS5 : {ip}:1080
+HTTP   : {ip}:8080
 """)
 
 
@@ -181,7 +181,32 @@ def restart():
 
 
 # -------------------------
-# Menu loop
+# KEY INPUT (NO ENTER)
+# -------------------------
+
+def get_key():
+    try:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+
+        try:
+            tty.setraw(fd)
+            key = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+        return key
+
+    except:
+        import msvcrt
+        return msvcrt.getch().decode()
+
+
+# -------------------------
+# MENU LOOP (NO ENTER PAUSE)
 # -------------------------
 
 def menu_loop():
@@ -190,7 +215,7 @@ def menu_loop():
         header()
         menu()
 
-        key = input("Select option: ").strip()
+        key = get_key()
 
         if key == "1":
             start()
@@ -204,13 +229,11 @@ def menu_loop():
             print("Bye 👋")
             break
         else:
-            print("Invalid option")
-
-        input("\nPress Enter to continue...")
+            continue
 
 
 # -------------------------
-# Entry
+# ENTRY
 # -------------------------
 
 if __name__ == "__main__":
