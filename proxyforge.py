@@ -83,7 +83,7 @@ def header():
 {BOLD}{CYAN}
 ========================
      🚀 ProxyForge
-     v{__version__}
+       v{__version__}
 ========================
 {RESET}
 Tor Status : {color}{status}{RESET}
