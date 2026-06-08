@@ -17,7 +17,7 @@ BOLD = "\033[1m"
 
 
 # -------------------------
-# Core utils
+# Core
 # -------------------------
 
 def run(cmd):
@@ -54,16 +54,11 @@ def get_lan_ip():
 
 
 # -------------------------
-# SAFE CLEANUP (KEY FIX)
+# CLEANUP
 # -------------------------
 
 def cleanup():
-    print(f"{CYAN}Cleaning environment...{RESET}")
-
-    # remove stopped containers (safe for this project use-case)
     subprocess.run(["docker", "container", "prune", "-f"], stdout=subprocess.DEVNULL)
-
-    # optional: remove orphan networks
     subprocess.run(["docker", "network", "prune", "-f"], stdout=subprocess.DEVNULL)
 
 
@@ -83,7 +78,7 @@ def header():
 {BOLD}{CYAN}
 ========================
      🚀 ProxyForge
-       v{__version__}
+     v{__version__}
 ========================
 {RESET}
 Tor Status : {color}{status}{RESET}
@@ -102,22 +97,40 @@ def menu():
 
 
 # -------------------------
-# Tor bootstrap monitor
+# KEY INPUT
 # -------------------------
 
-def print_progress(percent):
-    size = 30
-    filled = int(size * percent / 100)
-    bar = "█" * filled + "-" * (size - filled)
+def get_key():
+    try:
+        import termios, tty
 
-    print(f"\r{CYAN}Tor:{RESET} [{GREEN}{bar}{RESET}] {YELLOW}{percent}%{RESET}", end="")
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
 
-    if percent == 100:
-        print()
+        try:
+            tty.setraw(fd)
+            key = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
+        return key
+
+    except:
+        import msvcrt
+        return msvcrt.getch().decode()
+
+
+def pause():
+    print(f"\n{YELLOW}Press any key to continue...{RESET}")
+    get_key()
+
+
+# -------------------------
+# TOR MONITOR
+# -------------------------
 
 def wait_for_tor():
-    print(f"\n{CYAN}Waiting for Tor bootstrap...{RESET}\n")
+    print(f"\n{CYAN}Bootstrapping Tor...{RESET}\n")
 
     process = subprocess.Popen(
         ["docker", "logs", "-f", "--tail", "0", TOR_CONTAINER],
@@ -139,7 +152,7 @@ def wait_for_tor():
             continue
 
         last = percent
-        print_progress(percent)
+        print(f"{CYAN}Tor:{RESET} {GREEN}{percent}%{RESET}")
 
         if percent >= 100:
             process.terminate()
@@ -149,17 +162,16 @@ def wait_for_tor():
 
 
 # -------------------------
-# Actions
+# ACTIONS
 # -------------------------
 
 def start():
     if is_running():
         print(f"{YELLOW}Already running{RESET}")
+        pause()
         return
 
     check_docker()
-
-    # 🔥 PREVENT IMAGE/CONTAINER CONFLICTS
     cleanup()
 
     print(f"{CYAN}Building...{RESET}")
@@ -182,10 +194,13 @@ SOCKS5 Proxy : {ip}:1080
 HTTP Proxy   : {ip}:8080
 """)
 
+    pause()
+
 
 def stop():
     run(["docker", "compose", "down"])
     print(f"{RED}Stopped{RESET}")
+    pause()
 
 
 def logs():
@@ -195,31 +210,6 @@ def logs():
 def restart():
     stop()
     start()
-
-
-# -------------------------
-# KEY INPUT (NO ENTER)
-# -------------------------
-
-def get_key():
-    try:
-        import termios
-        import tty
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-
-        try:
-            tty.setraw(fd)
-            key = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-        return key
-
-    except:
-        import msvcrt
-        return msvcrt.getch().decode()
 
 
 # -------------------------
