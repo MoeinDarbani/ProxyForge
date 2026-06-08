@@ -1,4 +1,4 @@
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 import subprocess
 import sys
@@ -17,7 +17,7 @@ BOLD = "\033[1m"
 
 
 # -------------------------
-# Core
+# Core utils
 # -------------------------
 
 def run(cmd):
@@ -54,6 +54,20 @@ def get_lan_ip():
 
 
 # -------------------------
+# SAFE CLEANUP (KEY FIX)
+# -------------------------
+
+def cleanup():
+    print(f"{CYAN}Cleaning environment...{RESET}")
+
+    # remove stopped containers (safe for this project use-case)
+    subprocess.run(["docker", "container", "prune", "-f"], stdout=subprocess.DEVNULL)
+
+    # optional: remove orphan networks
+    subprocess.run(["docker", "network", "prune", "-f"], stdout=subprocess.DEVNULL)
+
+
+# -------------------------
 # UI
 # -------------------------
 
@@ -69,7 +83,7 @@ def header():
 {BOLD}{CYAN}
 ========================
      🚀 ProxyForge
-     v{__version__}
+         v{__version__}
 ========================
 {RESET}
 Tor Status : {color}{status}{RESET}
@@ -88,7 +102,7 @@ def menu():
 
 
 # -------------------------
-# Progress
+# Tor bootstrap monitor
 # -------------------------
 
 def print_progress(percent):
@@ -145,6 +159,9 @@ def start():
 
     check_docker()
 
+    # 🔥 PREVENT IMAGE/CONTAINER CONFLICTS
+    cleanup()
+
     print(f"{CYAN}Building...{RESET}")
     run(["docker", "compose", "build"])
 
@@ -158,11 +175,11 @@ def start():
     print(f"""
 {GREEN}
 ========================
-     READY
+        READY
 ========================
 {RESET}
-SOCKS5 : {ip}:1080
-HTTP   : {ip}:8080
+SOCKS5 Proxy : {ip}:1080
+HTTP Proxy   : {ip}:8080
 """)
 
 
@@ -206,7 +223,7 @@ def get_key():
 
 
 # -------------------------
-# MENU LOOP (NO ENTER PAUSE)
+# MENU LOOP
 # -------------------------
 
 def menu_loop():
@@ -228,8 +245,6 @@ def menu_loop():
         elif key == "5":
             print("Bye 👋")
             break
-        else:
-            continue
 
 
 # -------------------------
