@@ -1,0 +1,18 @@
+services:
+  tor:
+    build: .
+    container_name: proxyforge-tor
+    restart: unless-stopped
+    ports:
+      - "${SOCKS_PORT:-9050}:9050"
+
+  privoxy:
+    image: vimagick/privoxy
+    container_name: proxyforge-http
+    restart: unless-stopped
+    depends_on:
+      - tor
+    ports:
+      - "${HTTP_PORT:-8118}:8118"
+    volumes:
+      - ./privoxy/config:/etc/privoxy

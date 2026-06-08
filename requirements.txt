@@ -1,0 +1,7 @@
+# ProxyForge - Python dependencies
+# (currently no external dependencies required)
+
+# Future upgrade candidates:
+# rich
+# requests
+# click
