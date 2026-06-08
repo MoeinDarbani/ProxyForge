@@ -5,6 +5,7 @@ import sys
 import re
 import socket
 import os
+import time
 
 TOR_CONTAINER = "proxyforge-tor"
 
@@ -17,7 +18,7 @@ BOLD = "\033[1m"
 
 
 # -------------------------
-# Core
+# CORE
 # -------------------------
 
 def run(cmd):
@@ -126,11 +127,13 @@ def pause():
 
 
 # -------------------------
-# TOR MONITOR
+# TOR BOOTSTRAP (FINAL CLEAN)
 # -------------------------
 
 def wait_for_tor():
     print(f"\n{CYAN}Bootstrapping Tor...{RESET}\n")
+
+    start_time = time.time()
 
     process = subprocess.Popen(
         ["docker", "logs", "-f", "--tail", "0", TOR_CONTAINER],
@@ -139,7 +142,7 @@ def wait_for_tor():
         text=True
     )
 
-    last = -1
+    last_percent = -1
 
     for line in process.stdout:
         m = re.search(r"Bootstrapped (\d+)%", line)
@@ -148,17 +151,32 @@ def wait_for_tor():
 
         percent = int(m.group(1))
 
-        if percent <= last:
+        # only forward progress
+        if percent <= last_percent:
             continue
 
-        last = percent
-        print(f"{CYAN}Tor:{RESET} {GREEN}{percent}%{RESET}")
+        last_percent = percent
+
+        elapsed = int(time.time() - start_time)
+
+        bar_size = 30
+        filled = int(bar_size * percent / 100)
+        bar = "█" * filled + "-" * (bar_size - filled)
+
+        # ONLY ONE VALUE (NO HISTORY)
+        print(
+            f"\r{CYAN}Tor:{RESET} "
+            f"[{GREEN}{bar}{RESET}] "
+            f"{YELLOW}{percent}%{RESET} "
+            f"{CYAN}({elapsed}s){RESET}",
+            end=""
+        )
 
         if percent >= 100:
             process.terminate()
             break
 
-    print(f"\n{GREEN}Tor READY{RESET}\n")
+    print(f"\n\n{GREEN}Tor READY{RESET}\n")
 
 
 # -------------------------
