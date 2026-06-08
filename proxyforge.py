@@ -1,4 +1,4 @@
-__version__ = "0.0.3"
+__version__ = "0.0.1-beta"
 
 import subprocess
 import sys
@@ -83,7 +83,7 @@ def header():
 {BOLD}{CYAN}
 ========================
      🚀 ProxyForge
-         v{__version__}
+     v{__version__}
 ========================
 {RESET}
 Tor Status : {color}{status}{RESET}
