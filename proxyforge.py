@@ -1,4 +1,4 @@
-__version__ = "0.0.1-beta"
+__version__ = "0.0.2"
 
 import subprocess
 import sys
@@ -6,11 +6,7 @@ import re
 import socket
 import os
 
-CONTAINER = "proxyforge-tor"
-
-# -------------------------
-# Colors
-# -------------------------
+TOR_CONTAINER = "proxyforge-tor"
 
 RESET = "\033[0m"
 GREEN = "\033[92m"
@@ -19,12 +15,14 @@ YELLOW = "\033[93m"
 CYAN = "\033[96m"
 BOLD = "\033[1m"
 
+
 # -------------------------
-# Docker Utils
+# Core Utils
 # -------------------------
 
 def run(cmd):
     subprocess.run(cmd)
+
 
 def check_docker():
     try:
@@ -35,16 +33,14 @@ def check_docker():
             check=True
         )
     except:
-        print(f"{RED}[✗] Docker not available{RESET}")
+        print(f"{RED}Docker is not available{RESET}")
         sys.exit(1)
+
 
 def is_running():
     result = subprocess.getoutput("docker ps --format '{{.Names}}'")
-    return CONTAINER in result
+    return TOR_CONTAINER in result
 
-# -------------------------
-# LAN IP
-# -------------------------
 
 def get_lan_ip():
     try:
@@ -56,80 +52,74 @@ def get_lan_ip():
     except:
         return "127.0.0.1"
 
+
 # -------------------------
-# UI Helpers
+# UI
 # -------------------------
 
 def clear():
     os.system("cls" if os.name == "nt" else "clear")
 
-def render_header():
+
+def header():
     status = "RUNNING" if is_running() else "STOPPED"
     color = GREEN if status == "RUNNING" else RED
 
     print(f"""
 {BOLD}{CYAN}
-====================================
-        🚀 ProxyForge
-           {__version__}
-====================================
+========================
+     🚀 ProxyForge
+     v{__version__}
+========================
 {RESET}
-Status   : {color}{status}{RESET}
-Container: {YELLOW}{CONTAINER}{RESET}
-
+Tor Status : {color}{status}{RESET}
+Container  : {YELLOW}{TOR_CONTAINER}{RESET}
 """)
 
-def render_menu():
+
+def menu():
     print(f"""
 {CYAN}[1]{RESET} Start ProxyForge
 {CYAN}[2]{RESET} Stop
 {CYAN}[3]{RESET} Restart
 {CYAN}[4]{RESET} Logs
 {CYAN}[5]{RESET} Exit
-
-Press a key (NO ENTER REQUIRED)
 """)
 
-# -------------------------
-# Progress
-# -------------------------
 
-def render_bar(percent, size=25):
-    filled = int(size * percent / 100)
-    return "█" * filled + "-" * (size - filled)
+# -------------------------
+# Tor bootstrap monitor
+# -------------------------
 
 def print_progress(percent):
-    bar = render_bar(percent)
-    sys.stdout.write(
-        f"\r{CYAN}Tor:{RESET} [{GREEN}{bar}{RESET}] {YELLOW}{percent:3d}%{RESET}"
-    )
-    sys.stdout.flush()
+    size = 30
+    filled = int(size * percent / 100)
+    bar = "█" * filled + "-" * (size - filled)
+
+    print(f"\r{CYAN}Tor:{RESET} [{GREEN}{bar}{RESET}] {YELLOW}{percent}%{RESET}", end="")
+
     if percent == 100:
         print()
 
-# -------------------------
-# Tor watcher
-# -------------------------
 
 def wait_for_tor():
-    print(f"\n{CYAN}[+] Bootstrapping Tor...{RESET}\n")
+    print(f"\n{CYAN}Waiting for Tor bootstrap...{RESET}\n")
+
+    process = subprocess.Popen(
+        ["docker", "logs", "-f", "--tail", "0", TOR_CONTAINER],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
 
     last = -1
 
-    process = subprocess.Popen(
-        ["docker", "logs", "-f", "--tail", "0", CONTAINER],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1
-    )
-
     for line in process.stdout:
-        m = re.search(r"Bootstrapped (\d+)%", line)
-        if not m:
+        match = re.search(r"Bootstrapped (\d+)%", line)
+        if not match:
             continue
 
-        percent = int(m.group(1))
+        percent = int(match.group(1))
 
         if percent <= last:
             continue
@@ -141,7 +131,8 @@ def wait_for_tor():
             process.terminate()
             break
 
-    print(f"\n{GREEN}[✓] Tor READY{RESET}\n")
+    print(f"\n{GREEN}Tor is READY{RESET}\n")
+
 
 # -------------------------
 # Actions
@@ -154,10 +145,10 @@ def start():
 
     check_docker()
 
-    print(f"{CYAN}Building...{RESET}")
+    print(f"{CYAN}Building containers...{RESET}")
     run(["docker", "compose", "build"])
 
-    print(f"{CYAN}Starting...{RESET}")
+    print(f"{CYAN}Starting containers...{RESET}")
     run(["docker", "compose", "up", "-d"])
 
     wait_for_tor()
@@ -170,56 +161,36 @@ def start():
         READY
 ========================
 {RESET}
-SOCKS5 : {ip}:1080
-HTTP   : {ip}:8080
+SOCKS5 Proxy : {ip}:1080
+HTTP Proxy   : {ip}:8080
 """)
+
 
 def stop():
     run(["docker", "compose", "down"])
     print(f"{RED}Stopped{RESET}")
 
+
 def logs():
-    run(["docker", "logs", "-f", CONTAINER])
+    run(["docker", "logs", "-f", TOR_CONTAINER])
+
 
 def restart():
     stop()
     start()
 
-# -------------------------
-# RAW KEY INPUT (NO ENTER)
-# -------------------------
-
-def get_key():
-    try:
-        import termios
-        import tty
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-
-        try:
-            tty.setraw(fd)
-            key = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-        return key
-
-    except:
-        import msvcrt
-        return msvcrt.getch().decode()
 
 # -------------------------
-# MENU LOOP (NO ENTER)
+# Menu loop
 # -------------------------
 
-def menu():
+def menu_loop():
     while True:
         clear()
-        render_header()
-        render_menu()
+        header()
+        menu()
 
-        key = get_key()
+        key = input("Select option: ").strip()
 
         if key == "1":
             start()
@@ -233,13 +204,14 @@ def menu():
             print("Bye 👋")
             break
         else:
-            print("Invalid key")
+            print("Invalid option")
 
         input("\nPress Enter to continue...")
 
+
 # -------------------------
-# ENTRY
+# Entry
 # -------------------------
 
 if __name__ == "__main__":
-    menu()
+    menu_loop()

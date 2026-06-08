@@ -3,8 +3,10 @@ services:
     build: .
     container_name: proxyforge-tor
     restart: unless-stopped
+    networks:
+      - proxy_net
     ports:
-      - "${SOCKS_PORT:-9050}:9050"
+      - "1080:9050"   # SOCKS standard mapped to Tor internal
 
   privoxy:
     image: vimagick/privoxy
@@ -12,7 +14,12 @@ services:
     restart: unless-stopped
     depends_on:
       - tor
+    networks:
+      - proxy_net
     ports:
-      - "${HTTP_PORT:-8118}:8118"
+      - "8080:8118"   # HTTP standard mapped to Privoxy internal
     volumes:
       - ./privoxy/config:/etc/privoxy
+
+networks:
+  proxy_net:
