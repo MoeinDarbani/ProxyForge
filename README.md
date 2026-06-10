@@ -65,7 +65,7 @@ Before running ProxyForge:
 ### 1. Clone repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ProxyForge.git
+git clone https://github.com/MoeinDarbani/ProxyForge.git
 cd ProxyForge
 ```
 
