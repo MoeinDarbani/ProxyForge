@@ -1,263 +1,216 @@
-__version__ = "0.0.1-beta"
+__version__ = "0.0.2-beta"
 
 import subprocess
-import sys
-import re
+import json
 import socket
 import os
 import time
 
-TOR_CONTAINER = "proxyforge-tor"
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
 
-RESET = "\033[0m"
-GREEN = "\033[92m"
-RED = "\033[91m"
-YELLOW = "\033[93m"
-CYAN = "\033[96m"
-BOLD = "\033[1m"
+TOR_CONTAINER = "proxyforge-tor"
+console = Console()
 
 
 # -------------------------
-# CORE
+# DOCKER SINGLE SOURCE OF TRUTH
+# -------------------------
+
+def inspect_container():
+    try:
+        out = subprocess.check_output(
+            ["docker", "inspect", TOR_CONTAINER],
+            text=True
+        )
+        return json.loads(out)[0]
+    except:
+        return None
+
+
+def get_state():
+    data = inspect_container()
+    if not data:
+        return "STOPPED"
+
+    state = data["State"]
+
+    if state.get("Running"):
+        health = state.get("Health", {}).get("Status")
+
+        if health == "healthy":
+            return "RUNNING"
+        return "STARTING"
+
+    return "STOPPED"
+
+
+# -------------------------
+# SAFETY CHECKS
+# -------------------------
+
+def system_tor_running():
+    out = subprocess.getoutput("ps aux | grep '[t]or'")
+    return bool(out.strip())
+
+
+def port_free(port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("0.0.0.0", port))
+        return True
+    except:
+        return False
+    finally:
+        s.close()
+
+
+def validate_ports():
+    return [p for p in (1080, 8080) if not port_free(p)]
+
+
+# -------------------------
+# DOCKER CONTROL
 # -------------------------
 
 def run(cmd):
-    subprocess.run(cmd)
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def check_docker():
-    try:
-        subprocess.run(
-            ["docker", "info"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True
-        )
-    except:
-        print(f"{RED}Docker not available{RESET}")
-        sys.exit(1)
+def start_container():
+    run(["docker", "compose", "up", "-d"])
 
 
-def is_running():
-    result = subprocess.getoutput("docker ps --format '{{.Names}}'")
-    return TOR_CONTAINER in result
+def stop_container():
+    run(["docker", "compose", "down", "--remove-orphans"])
+    run(["docker", "rm", "-f", TOR_CONTAINER])
 
 
-def get_lan_ip():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except:
-        return "127.0.0.1"
+def build():
+    run(["docker", "compose", "build"])
 
 
 # -------------------------
-# CLEANUP
+# UI (NO FLICKER, NO PROGRESS FAKE)
 # -------------------------
 
-def cleanup():
-    subprocess.run(["docker", "container", "prune", "-f"], stdout=subprocess.DEVNULL)
-    subprocess.run(["docker", "network", "prune", "-f"], stdout=subprocess.DEVNULL)
+def render():
+    state = get_state()
 
-
-# -------------------------
-# UI
-# -------------------------
-
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
-
-
-def header():
-    status = "RUNNING" if is_running() else "STOPPED"
-    color = GREEN if status == "RUNNING" else RED
-
-    print(f"""
-{BOLD}{CYAN}
-========================
-     🚀 ProxyForge
-     v{__version__}
-========================
-{RESET}
-Tor Status : {color}{status}{RESET}
-Container  : {YELLOW}{TOR_CONTAINER}{RESET}
-""")
-
-
-def menu():
-    print(f"""
-{CYAN}[1]{RESET} Start
-{CYAN}[2]{RESET} Stop
-{CYAN}[3]{RESET} Restart
-{CYAN}[4]{RESET} Logs
-{CYAN}[5]{RESET} Exit
-""")
-
-
-# -------------------------
-# KEY INPUT
-# -------------------------
-
-def get_key():
-    try:
-        import termios, tty
-
-        fd = sys.stdin.fileno()
-        old = termios.tcgetattr(fd)
-
-        try:
-            tty.setraw(fd)
-            key = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old)
-
-        return key
-
-    except:
-        import msvcrt
-        return msvcrt.getch().decode()
-
-
-def pause():
-    print(f"\n{YELLOW}Press any key to continue...{RESET}")
-    get_key()
-
-
-# -------------------------
-# TOR BOOTSTRAP (FINAL CLEAN)
-# -------------------------
-
-def wait_for_tor():
-    print(f"\n{CYAN}Bootstrapping Tor...{RESET}\n")
-
-    start_time = time.time()
-
-    process = subprocess.Popen(
-        ["docker", "logs", "-f", "--tail", "0", TOR_CONTAINER],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+    color = (
+        "green" if state == "RUNNING"
+        else "yellow" if state == "STARTING"
+        else "red"
     )
 
-    last_percent = -1
+    table = Table(title="ProxyForge")
 
-    for line in process.stdout:
-        m = re.search(r"Bootstrapped (\d+)%", line)
-        if not m:
-            continue
+    table.add_column("Component")
+    table.add_column("Status")
 
-        percent = int(m.group(1))
+    table.add_row("Tor Container", f"[{color}]{state}[/{color}]")
 
-        # only forward progress
-        if percent <= last_percent:
-            continue
-
-        last_percent = percent
-
-        elapsed = int(time.time() - start_time)
-
-        bar_size = 30
-        filled = int(bar_size * percent / 100)
-        bar = "█" * filled + "-" * (bar_size - filled)
-
-        # ONLY ONE VALUE (NO HISTORY)
-        print(
-            f"\r{CYAN}Tor:{RESET} "
-            f"[{GREEN}{bar}{RESET}] "
-            f"{YELLOW}{percent}%{RESET} "
-            f"{CYAN}({elapsed}s){RESET}",
-            end=""
-        )
-
-        if percent >= 100:
-            process.terminate()
-            break
-
-    print(f"\n\n{GREEN}Tor READY{RESET}\n")
+    return Panel(table)
 
 
 # -------------------------
-# ACTIONS
+# UI LOOP (NON-BLOCKING SAFE)
+# -------------------------
+
+def ui_loop():
+    with Live(render(), refresh_per_second=2, console=console) as live:
+        while True:
+            live.update(render())
+            time.sleep(1)
+
+
+# -------------------------
+# START FLOW (SAFE)
 # -------------------------
 
 def start():
-    if is_running():
-        print(f"{YELLOW}Already running{RESET}")
-        pause()
+    if system_tor_running():
+        console.print("[yellow]Warning: System Tor detected[/yellow]")
+
+    conflicts = validate_ports()
+    if conflicts:
+        console.print(f"[red]Port conflict: {conflicts}[/red]")
         return
 
-    check_docker()
-    cleanup()
+    console.print("[cyan]Building...[/cyan]")
+    build()
 
-    print(f"{CYAN}Building...{RESET}")
-    run(["docker", "compose", "build"])
+    console.print("[cyan]Starting container...[/cyan]")
+    start_container()
 
-    print(f"{CYAN}Starting...{RESET}")
-    run(["docker", "compose", "up", "-d"])
+    # wait until docker actually reports running
+    for _ in range(30):
+        if get_state() in ("RUNNING", "STARTING"):
+            break
+        time.sleep(1)
 
-    wait_for_tor()
+    ui_loop()
 
-    ip = get_lan_ip()
 
-    print(f"""
-{GREEN}
-========================
-        READY
-========================
-{RESET}
-SOCKS5 Proxy : {ip}:1080
-HTTP Proxy   : {ip}:8080
-""")
-
-    pause()
-
+# -------------------------
+# STOP FLOW (FIXED - NO GHOST STATE)
+# -------------------------
 
 def stop():
-    run(["docker", "compose", "down"])
-    print(f"{RED}Stopped{RESET}")
-    pause()
+    console.print("[cyan]Stopping ProxyForge...[/cyan]")
 
+    stop_container()
+
+    # verification loop (critical fix)
+    for _ in range(10):
+        if get_state() == "STOPPED":
+            console.print("[green]Stopped successfully[/green]")
+            return
+        time.sleep(1)
+
+    console.print("[red]Stop failed - container still exists[/red]")
+
+
+# -------------------------
+# LOGS
+# -------------------------
 
 def logs():
-    run(["docker", "logs", "-f", TOR_CONTAINER])
-
-
-def restart():
-    stop()
-    start()
+    subprocess.run(["docker", "logs", "-f", TOR_CONTAINER])
 
 
 # -------------------------
-# MENU LOOP
+# MENU
 # -------------------------
 
-def menu_loop():
+def menu():
     while True:
-        clear()
-        header()
-        menu()
+        os.system("clear")
 
-        key = get_key()
+        state = get_state()
+        console.print(Panel(f"ProxyForge {__version__}\nState: {state}"))
 
-        if key == "1":
+        print("""
+[1] Start
+[2] Stop
+[3] Logs
+[4] Exit
+""")
+
+        c = input("> ")
+
+        if c == "1":
             start()
-        elif key == "2":
+        elif c == "2":
             stop()
-        elif key == "3":
-            restart()
-        elif key == "4":
+            input("press...")
+        elif c == "3":
             logs()
-        elif key == "5":
-            print("Bye 👋")
+        elif c == "4":
             break
 
 
-# -------------------------
-# ENTRY
-# -------------------------
-
 if __name__ == "__main__":
-    menu_loop()
+    menu()

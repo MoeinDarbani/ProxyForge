@@ -6,7 +6,7 @@ services:
     networks:
       - proxy_net
     ports:
-      - "1080:9050"   # SOCKS standard mapped to Tor internal
+      - "${SOCKS_PORT:-1080}:9050"
 
   privoxy:
     image: vimagick/privoxy
@@ -17,9 +17,7 @@ services:
     networks:
       - proxy_net
     ports:
-      - "8080:8118"   # HTTP standard mapped to Privoxy internal
-    volumes:
-      - ./privoxy/config:/etc/privoxy
+      - "${HTTP_PORT:-8080}:8118"
 
 networks:
   proxy_net:
